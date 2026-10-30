@@ -1,5 +1,9 @@
 # RetroArch for PS4 — audio fix, keyboard & CJK fonts
 
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](COPYING)
+![Platform: PS4](https://img.shields.io/badge/platform-PS4-003791.svg)
+![Toolchain: OpenOrbis](https://img.shields.io/badge/toolchain-OpenOrbis-5c5c5c.svg)
+
 [English](#english) · [中文](#中文)
 
 A fork of [osirizx/retroarch](https://github.com/osirizx/retroarch) (the PS4
