@@ -325,6 +325,9 @@ static const audio_driver_t *audio_drivers[] = {
 #if defined(PSP) || defined(VITA) || defined(ORBIS)
   &audio_psp,
 #endif
+#if defined(ORBIS) && defined(HAVE_OOSDK)
+  &audio_ps4,
+#endif
 #if defined(PS2)
   &audio_ps2,
 #endif

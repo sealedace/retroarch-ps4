@@ -26,6 +26,9 @@
 
 #include "../font_driver.h"
 #include "../../verbosity.h"
+#ifdef ORBIS
+#include "../../file_path_special.h"
+#endif
 
 #ifndef STB_TRUETYPE_IMPLEMENTATION
 #define STB_TRUETYPE_IMPLEMENTATION
@@ -50,6 +53,14 @@ typedef struct stb_unicode_atlas_slot
    struct stb_unicode_atlas_slot* next;
 }stb_unicode_atlas_slot_t;
 
+/* A font that supplies the glyphs the primary font lacks */
+typedef struct
+{
+   uint8_t *font_data;
+   stbtt_fontinfo info;
+   float scale_factor;
+} stb_unicode_fallback_t;
+
 typedef struct
 {
    uint8_t *font_data;
@@ -64,7 +75,65 @@ typedef struct
    stb_unicode_atlas_slot_t atlas_slots[STB_UNICODE_ATLAS_SIZE];
    stb_unicode_atlas_slot_t* uc_map[0x100];
    unsigned usage_counter;
+
+   float font_size;
+   /* Loaded on the first glyph the primary font lacks */
+   stb_unicode_fallback_t *fallback;
+   bool fallback_tried;
 } stb_unicode_font_renderer_t;
+
+static float font_renderer_stb_unicode_scale(const stbtt_fontinfo *info,
+      float font_size)
+{
+   if (font_size < 0)
+      return stbtt_ScaleForMappingEmToPixels(info, -font_size);
+   return stbtt_ScaleForPixelHeight(info, font_size);
+}
+
+static void font_renderer_stb_unicode_free_fallback(
+      stb_unicode_fallback_t *fallback)
+{
+   if (!fallback)
+      return;
+   free(fallback->font_data);
+   free(fallback);
+}
+
+/* The menu's fonts only cover Latin; take everything else (playlist
+ * labels in Chinese, for instance) from the CJK font in assets/pkg. */
+static stb_unicode_fallback_t *font_renderer_stb_unicode_load_fallback(
+      float font_size)
+{
+#ifdef ORBIS
+   char dir[PATH_MAX_LENGTH];
+   char path[PATH_MAX_LENGTH];
+   stb_unicode_fallback_t *fallback = NULL;
+
+   dir[0]  = '\0';
+   path[0] = '\0';
+   fill_pathname_application_special(dir, sizeof(dir),
+         APPLICATION_SPECIAL_DIRECTORY_ASSETS_PKG);
+   fill_pathname_join(path, dir, "chinese-fallback-font.ttf", sizeof(path));
+
+   if (!path_is_valid(path))
+      return NULL;
+   if (!(fallback = (stb_unicode_fallback_t*)calloc(1, sizeof(*fallback))))
+      return NULL;
+   if (!filestream_read_file(path, (void**)&fallback->font_data, NULL) ||
+       !stbtt_InitFont(&fallback->info, fallback->font_data,
+            stbtt_GetFontOffsetForIndex(fallback->font_data, 0)))
+   {
+      RARCH_WARN("[stb_unicode] Cannot load fallback font %s\n", path);
+      font_renderer_stb_unicode_free_fallback(fallback);
+      return NULL;
+   }
+   fallback->scale_factor = font_renderer_stb_unicode_scale(
+         &fallback->info, font_size);
+   return fallback;
+#else
+   return NULL;
+#endif
+}
 
 static struct font_atlas *font_renderer_stb_unicode_get_atlas(void *data)
 {
@@ -78,6 +147,7 @@ static void font_renderer_stb_unicode_free(void *data)
 
    free(self->atlas.buffer);
    free(self->font_data);
+   font_renderer_stb_unicode_free_fallback(self->fallback);
    free(self);
 }
 
@@ -118,6 +188,8 @@ static const struct font_glyph *font_renderer_stb_unicode_get_glyph(
    uint8_t *dst                         = NULL;
    stb_unicode_atlas_slot_t* atlas_slot = NULL;
    stb_unicode_font_renderer_t *self    = (stb_unicode_font_renderer_t*)data;
+   const stbtt_fontinfo *info           = NULL;
+   float scale_factor                   = 0.0f;
    float glyph_advance_x                = 0.0f;
    float glyph_draw_offset_y            = 0.0f;
 
@@ -142,16 +214,39 @@ static const struct font_glyph *font_renderer_stb_unicode_get_glyph(
    atlas_slot->next       = self->uc_map[map_id];
    self->uc_map[map_id]   = atlas_slot;
 
-   glyph_index            = stbtt_FindGlyphIndex(&self->info, charcode);
+   info                   = &self->info;
+   scale_factor           = self->scale_factor;
+   glyph_index            = stbtt_FindGlyphIndex(info, charcode);
+
+   if (!glyph_index && charcode >= 0x80)
+   {
+      if (!self->fallback_tried)
+      {
+         self->fallback_tried = true;
+         self->fallback       = font_renderer_stb_unicode_load_fallback(
+               self->font_size);
+      }
+      if (self->fallback)
+      {
+         int fallback_index = stbtt_FindGlyphIndex(
+               &self->fallback->info, charcode);
+         if (fallback_index)
+         {
+            info         = &self->fallback->info;
+            scale_factor = self->fallback->scale_factor;
+            glyph_index  = fallback_index;
+         }
+      }
+   }
 
    dst = (uint8_t*)self->atlas.buffer + atlas_slot->glyph.atlas_offset_x
          + atlas_slot->glyph.atlas_offset_y * self->atlas.width;
 
-   stbtt_GetGlyphHMetrics(&self->info, glyph_index, &advance_width, &left_side_bearing);
-   if (stbtt_GetGlyphBox(&self->info, glyph_index, &x0, NULL, NULL, &y1))
+   stbtt_GetGlyphHMetrics(info, glyph_index, &advance_width, &left_side_bearing);
+   if (stbtt_GetGlyphBox(info, glyph_index, &x0, NULL, NULL, &y1))
    {
-      stbtt_MakeGlyphBitmap(&self->info, dst, self->max_glyph_width, self->max_glyph_height,
-            self->atlas.width, self->scale_factor, self->scale_factor, glyph_index);
+      stbtt_MakeGlyphBitmap(info, dst, self->max_glyph_width, self->max_glyph_height,
+            self->atlas.width, scale_factor, scale_factor, glyph_index);
    }
    else
    {
@@ -168,17 +263,17 @@ static const struct font_glyph *font_renderer_stb_unicode_get_glyph(
    atlas_slot->glyph.height         = self->max_glyph_height;
    /* advance_x must always be rounded to the
     * *nearest* integer */
-   glyph_advance_x = (float)advance_width * self->scale_factor;
+   glyph_advance_x = (float)advance_width * scale_factor;
    atlas_slot->glyph.advance_x      = (int)((glyph_advance_x > 0.0f) ?
          (glyph_advance_x + 0.5f) : (glyph_advance_x - 0.5f));
    /* advance_y is always zero */
    atlas_slot->glyph.advance_y      = 0;
    /* draw_offset_x must always be rounded *down*
     * to the nearest integer */
-   atlas_slot->glyph.draw_offset_x  = (int)((float)x0 * self->scale_factor);
+   atlas_slot->glyph.draw_offset_x  = (int)((float)x0 * scale_factor);
    /* draw_offset_y must always be rounded *up*
     * to the nearest integer */
-   glyph_draw_offset_y = (float)(-y1) * self->scale_factor;
+   glyph_draw_offset_y = (float)(-y1) * scale_factor;
    atlas_slot->glyph.draw_offset_y  = (int)((glyph_draw_offset_y < 0.0f) ?
          floor((double)glyph_draw_offset_y) : ceil((double)glyph_draw_offset_y));
 
@@ -259,10 +354,8 @@ static void *font_renderer_stb_unicode_init(const char *font_path, float font_si
 
    stbtt_GetFontVMetrics(&self->info, &ascent, &descent, &line_gap);
 
-   if (font_size < 0)
-      self->scale_factor = stbtt_ScaleForMappingEmToPixels(&self->info, -font_size);
-   else
-      self->scale_factor = stbtt_ScaleForPixelHeight(&self->info, font_size);
+   self->font_size    = font_size;
+   self->scale_factor = font_renderer_stb_unicode_scale(&self->info, font_size);
 
    /* Ascender, descender and line_gap values always
     * end up ~0.5 pixels too small when scaled...

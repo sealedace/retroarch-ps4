@@ -1,6 +1,9 @@
 #ifndef _USER_MEM_H
 #define _USER_MEM_H
 
+#include <stddef.h>
+#include <stdarg.h>
+
 #define MEM_SIZE (0xA0000000) /* 2600 MiB */
 #define MEM_ALIGN (16UL * 1024)
 

@@ -59,7 +59,11 @@
 #  include <unistd.h>
 #  if defined(ORBIS)
 #  include <sys/fcntl.h>
+#  if defined(HAVE_OOSDK)
+#  include <dirent.h>
+#  else
 #  include <sys/dirent.h>
+#  endif
 #  if defined(HAVE_LIBORBIS)
 #    include <orbisFile.h>
 #  endif
@@ -87,7 +91,11 @@
 #    include <orbisFile.h>
 #    include <ps4link.h>
 #  endif
+#  if defined(HAVE_OOSDK)
+#  include <dirent.h>
+#  else
 #  include <sys/dirent.h>
+#  endif
 #  include <sys/fcntl.h>
 #elif !defined(_WIN32)
 #  if defined(PSP)
@@ -139,7 +147,11 @@
 #include <orbisFile.h>
 #endif
 #include <sys/fcntl.h>
+#if defined(HAVE_OOSDK)
+#include <dirent.h>
+#else
 #include <sys/dirent.h>
+#endif
 #include "../../defines/ps4_defines.h"
 #endif
 #if defined(PSP)

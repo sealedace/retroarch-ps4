@@ -1,7 +1,8 @@
 ﻿#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
 #if defined(HAVE_OOSDK)
 #include <orbis/libkernel.h>
-#include <orbis/LibcInternal.h>
 #else
 #include <kernel.h>
 #include <mspace.h>
@@ -9,10 +10,55 @@
 #include "../../defines/ps4_defines.h"
 #include "user_mem.h"
 
+#if defined(HAVE_OOSDK)
+/* OpenOrbis' <orbis/LibcInternal.h> redeclares the whole C library with
+ * types that conflict with musl, so declare only the mspace API used here. */
+OrbisMspace sceLibcMspaceCreate(const char *name, void *base, size_t capacity, unsigned int flag);
+int sceLibcMspaceDestroy(OrbisMspace msp);
+void *sceLibcMspaceMalloc(OrbisMspace msp, size_t size);
+void sceLibcMspaceFree(OrbisMspace msp, void *ptr);
+void *sceLibcMspaceCalloc(OrbisMspace msp, size_t nelem, size_t size);
+void *sceLibcMspaceRealloc(OrbisMspace msp, void *ptr, size_t size);
+void *sceLibcMspaceMemalign(OrbisMspace msp, size_t boundary, size_t size);
+int sceLibcMspacePosixMemalign(OrbisMspace msp, void **ptr, size_t boundary, size_t size);
+void *sceLibcMspaceReallocalign(OrbisMspace msp, void *ptr, size_t boundary, size_t size);
+int sceLibcMspaceMallocStats(OrbisMspace msp, OrbisMallocManagedSize *mmsize);
+int sceLibcMspaceMallocStatsFast(OrbisMspace msp, OrbisMallocManagedSize *mmsize);
+size_t sceLibcMspaceMallocUsableSize(void *ptr);
+
+/* <orbis/libkernel.h> declares this one as returning void */
+typedef int (*map_named_system_flexible_memory_t)(void **addr, size_t len,
+      int prot, int flags, const char *name);
+#define sceKernelMapNamedSystemFlexibleMemory \
+   ((map_named_system_flexible_memory_t)sceKernelMapNamedSystemFlexibleMemory)
+#endif
+
 static OrbisMspace s_mspace = 0;
 static OrbisMallocManagedSize s_mmsize;
 static void *s_mem_start = 0;
 static size_t s_mem_size = MEM_SIZE;
+
+#if defined(HAVE_OOSDK)
+/* Heap size in MiB from /data/retroarch/ps4_user_mem_mb, read with the
+ * kernel calls because malloc is not up yet. */
+static size_t user_mem_size_setting(void)
+{
+  char buf[16];
+  size_t mb = 0;
+  int i, n;
+  int fd = sceKernelOpen("/data/retroarch/ps4_user_mem_mb", 0, 0);
+
+  if (fd < 0)
+    return MEM_SIZE;
+  n = (int)sceKernelRead(fd, buf, sizeof(buf) - 1);
+  sceKernelClose(fd);
+  for (i = 0; i < n && buf[i] >= '0' && buf[i] <= '9'; i++)
+    mb = mb * 10 + (size_t)(buf[i] - '0');
+  if (mb < 64 || mb > (MEM_SIZE >> 20))
+    return MEM_SIZE;
+  return mb << 20;
+}
+#endif
 
 int malloc_init(void)
 {
@@ -21,13 +67,18 @@ int malloc_init(void)
   if (s_mspace)
     return 0;
 
-  res = sceKernelReserveVirtualRange(&s_mem_start, MEM_SIZE, 0, MEM_ALIGN);
+#if defined(HAVE_OOSDK)
+  s_mem_size = user_mem_size_setting();
+#endif
+
+  res = sceKernelReserveVirtualRange(&s_mem_start, s_mem_size, 0, MEM_ALIGN);
   if (res < 0)
     return 1;
 
-  res = sceKernelMapNamedSystemFlexibleMemory(&s_mem_start, MEM_SIZE, SCE_KERNEL_PROT_CPU_RW, SCE_KERNEL_MAP_FIXED, "User Mem");
+  res = sceKernelMapNamedSystemFlexibleMemory(&s_mem_start, s_mem_size, SCE_KERNEL_PROT_CPU_RW, SCE_KERNEL_MAP_FIXED, "User Mem");
   if (res < 0)
     return 1;
+
 
   s_mspace = sceLibcMspaceCreate("User Mspace", s_mem_start, s_mem_size, 0);
   if (!s_mspace)

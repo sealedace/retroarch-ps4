@@ -40,14 +40,48 @@
 
 #ifdef HAVE_KEYBOARD
 #if defined(HAVE_OOSDK)
-#include <orbis/DbgKeyboard.h>
+#include <stdio.h>
+#include <stdarg.h>
+#include <string.h>
+#include <orbis/libkernel.h>
+#include <orbis/UserService.h>
+#include "../../verbosity.h"
+
+/* The keyboard functions live in the system's libSceKeyboard module, whose
+ * exports include the sceDbgKeyboard* family. There is no libSceDbgKeyboard
+ * module to link against, so they are looked up at run time: without a
+ * keyboard module the driver simply has no keyboard. */
+typedef struct SceDbgKeyboardData
+{
+   uint64_t timestamp;
+   uint32_t intercepted;
+   uint32_t reserved0;
+   int32_t  connected;
+   int32_t  length;
+   uint32_t led;
+   uint32_t modifierKey;
+   uint16_t keyCode[16];
+   uint8_t  reserved1[32];
+} SceDbgKeyboardData;
+
+typedef int (*ps4_kb_init_t)(void);
+typedef int (*ps4_kb_open_t)(int32_t user_id, int32_t type, int32_t index,
+      const void *param);
+typedef int (*ps4_kb_read_state_t)(int32_t handle, SceDbgKeyboardData *data);
+typedef int (*ps4_kb_close_t)(int32_t handle);
+typedef int (*ps4_kb_set_privilege_t)(uint8_t privilege);
+typedef int (*ps4_kb_get_handle_t)(int32_t user_id, int32_t type, int32_t index);
+
+
+static ps4_kb_read_state_t ps4_kb_read_state = NULL;
+
+static ps4_kb_close_t      ps4_kb_close      = NULL;
 #else
 #include <dbg_keyboard.h>
 #endif
 #include "../input_keymaps.h"
 #define PS4_MAX_SCANCODE 0xE7
-#define PS4_NUM_MODIFIERS 11 /* number of modifiers reported */
-#define KEYBOARD_MAX_HISTORY 6
+#define PS4_NUM_MODIFIERS 8 /* modifier bits in modifierKey */
 uint8_t modifier_lut[PS4_NUM_MODIFIERS][2] =
 {
    { 0xE0, 0x01 }, /* LCTRL */
@@ -57,10 +91,7 @@ uint8_t modifier_lut[PS4_NUM_MODIFIERS][2] =
    { 0xE2, 0x04 }, /* LALT */
    { 0xE6, 0x40 }, /* RALT */
    { 0xE3, 0x08 }, /* LGUI */
-   { 0xE7, 0x80 }, /* RGUI */
-   { 0x53, 0x01 }, /* NUMLOCK */
-   { 0x39, 0x02 }, /* CAPSLOCK */
-   { 0x47, 0x04 }  /* SCROLLOCK */
+   { 0xE7, 0x80 }  /* RGUI */
 };
 #endif
 
@@ -85,7 +116,6 @@ typedef struct ps4_input
    bool keyboard_connected;
    int32_t keyboard_handle;
    bool keyboard_state[PS4_MAX_SCANCODE + 1];
-   uint8_t prev_keys[KEYBOARD_MAX_HISTORY];
 #endif
 } ps4_input_t;
 
@@ -116,57 +146,52 @@ static void ps4_input_poll(void *data)
    unsigned int i = 0;
    int key_sym = 0;
    unsigned key_code = 0;
-   uint8_t mod_code = 0;
    uint16_t mod = 0;
    uint32_t modifiers;
    bool key_held = false;
    SceDbgKeyboardData keyboard_state;
-   ret = sceDbgKeyboardReadState(ps4->keyboard_handle, &keyboard_state);
+#if defined(HAVE_OOSDK)
+   memset(&keyboard_state, 0, sizeof(keyboard_state));
+   if (ps4->keyboard_handle >= 0 && ps4_kb_read_state)
+      ps4_kb_read_state(ps4->keyboard_handle, &keyboard_state);
+#else
+   sceDbgKeyboardReadState(ps4->keyboard_handle, &keyboard_state);
+#endif
    ps4->keyboard_connected = keyboard_state.connected;
-   if (ps4->keyboard_connected)
    {
-     modifiers = keyboard_state.modifierKey;
-     mod = (uint16_t)keyboard_state.modifierKey;
+     /* Keys held now: the modifier bits, plus the usages listed in
+      * keyCode[]. The list is not positional - it reorders as keys are
+      * pressed and released - so it is compared as a set. */
+     bool held[PS4_MAX_SCANCODE + 1];
+     memset(held, 0, sizeof(held));
 
-     for (i = 0; i < PS4_NUM_MODIFIERS; i++)
+     if (ps4->keyboard_connected)
      {
-        key_sym = (int) modifier_lut[i][0];
-        mod_code = modifier_lut[i][1];
-        key_code = input_keymaps_translate_keysym_to_rk(key_sym);
-        key_held = (modifiers & mod_code);
-        if (key_held && !(ps4->keyboard_state[key_sym]))
+        modifiers = keyboard_state.modifierKey;
+        for (i = 0; i < PS4_NUM_MODIFIERS; i++)
+           if (modifiers & modifier_lut[i][1])
+              held[modifier_lut[i][0]] = true;
+
+        for (i = 0; i < sizeof(keyboard_state.keyCode)
+              / sizeof(keyboard_state.keyCode[0]); i++)
         {
-           ps4->keyboard_state[key_sym] = true;
-           input_keyboard_event(true, key_code, 0, mod, RETRO_DEVICE_KEYBOARD);
-        }
-        else if (!key_held && (ps4->keyboard_state[key_sym]))
-        {
-           ps4->keyboard_state[key_sym] = false;
-           input_keyboard_event(false, key_code, 0, mod, RETRO_DEVICE_KEYBOARD);
+           key_sym = keyboard_state.keyCode[i];
+           /* 0x01-0x03 are the HID error/rollover codes */
+           if (key_sym >= 0x04 && key_sym < 0xE0)
+              held[key_sym] = true;
         }
      }
 
-    for (i = 0; i < KEYBOARD_MAX_HISTORY; i++)
-    {
-      key_sym = keyboard_state.keyCode[i];
-
-      if (key_sym != ps4->prev_keys[i])
-      {
-         if (ps4->prev_keys[i])
-         {
-            ps4->keyboard_state[ps4->prev_keys[i]] = false;
-            key_code = input_keymaps_translate_keysym_to_rk(ps4->prev_keys[i]);
-            input_keyboard_event(false, key_code, 0, mod, RETRO_DEVICE_KEYBOARD);
-         }
-         if (key_sym)
-         {
-            ps4->keyboard_state[key_sym] = true;
-            key_code = input_keymaps_translate_keysym_to_rk(key_sym);
-            input_keyboard_event(true, key_code, 0, mod, RETRO_DEVICE_KEYBOARD);
-         }
-         ps4->prev_keys[i] = key_sym;
-      }
-    }
+     mod = (uint16_t)(ps4->keyboard_connected ? keyboard_state.modifierKey : 0);
+     for (key_sym = 1; key_sym <= PS4_MAX_SCANCODE; key_sym++)
+     {
+        key_held = held[key_sym];
+        if (key_held == ps4->keyboard_state[key_sym])
+           continue;
+        ps4->keyboard_state[key_sym] = key_held;
+        key_code = input_keymaps_translate_keysym_to_rk(key_sym);
+        input_keyboard_event(key_held, key_code, 0, mod, RETRO_DEVICE_KEYBOARD);
+     }
    }
 #endif
 }
@@ -202,6 +227,18 @@ static int16_t ps4_input_mouse_state(ps4_input_t *ps4, unsigned id, bool screen)
 }
 #endif
 
+#ifdef HAVE_KEYBOARD
+/* Whether the key bound to a RetroPad button is held */
+static bool ps4_keyboard_bind_pressed(ps4_input_t *ps4, enum retro_key key)
+{
+   unsigned sym;
+   if (key == RETROK_UNKNOWN || key >= RETROK_LAST)
+      return false;
+   sym = (unsigned)rarch_keysym_lut[key];
+   return sym && sym <= PS4_MAX_SCANCODE && ps4->keyboard_state[sym];
+}
+#endif
+
 static int16_t ps4_input_state(void *data,
       rarch_joypad_info_t *joypad_info,
       const struct retro_keybind **binds,
@@ -231,6 +268,14 @@ static int16_t ps4_input_state(void *data,
                   ret |= (1 << i);
                   continue;
                }
+#ifdef HAVE_KEYBOARD
+               if (binds[port][i].valid
+                     && ps4_keyboard_bind_pressed(ps4, binds[port][i].key))
+               {
+                  ret |= (1 << i);
+                  continue;
+               }
+#endif
                if (((float)abs(ps4->joypad->axis(joypad_info->joy_idx, joyaxis)) / 0x8000) > joypad_info->axis_threshold)
                {
                   ret |= (1 << i);
@@ -251,6 +296,11 @@ static int16_t ps4_input_state(void *data,
             if ((uint16_t)joykey != NO_BTN && ps4->joypad->button(
                      joypad_info->joy_idx, (uint16_t)joykey))
                return true;
+#ifdef HAVE_KEYBOARD
+            if (id < RARCH_BIND_LIST_END && binds[port][id].valid
+                  && ps4_keyboard_bind_pressed(ps4, binds[port][id].key))
+               return true;
+#endif
             if (((float)abs(ps4->joypad->axis(joypad_info->joy_idx, joyaxis)) / 0x8000) > joypad_info->axis_threshold)
                return true;
          }
@@ -288,10 +338,102 @@ static void ps4_input_free_input(void *data)
    sceMouseClose(ps4->mouse_handle);
 #endif
 #if defined(HAVE_KEYBOARD)
+#if defined(HAVE_OOSDK)
+   /* Kept open for the life of the process, see ps4_keyboard_open() */
+#else
    sceDbgKeyboardClose(ps4->keyboard_handle);
+#endif
 #endif
    free(data);
 }
+
+#if defined(HAVE_KEYBOARD) && defined(HAVE_OOSDK)
+static void *ps4_keyboard_sym(int32_t module, const char *debug_name,
+      const char *name, bool *is_debug)
+{
+   void *sym = NULL;
+   if (sceKernelDlsym(module, debug_name, &sym) == 0 && sym)
+      *is_debug = true;
+   else if (sceKernelDlsym(module, name, &sym) != 0)
+      sym = NULL;
+   return sym;
+}
+
+static void ps4_keyboard_logf(const char *fmt, ...)
+{
+   /* Straight to the kernel log: RetroArch's own log is switched off
+    * once content auto-starts, and the input driver is set up again then. */
+   char line[160];
+   va_list ap;
+   va_start(ap, fmt);
+   vsnprintf(line, sizeof(line), fmt, ap);
+   va_end(ap);
+   sceKernelDebugOutText(0, line);
+}
+
+/* The keyboard is opened once per process: the input driver is torn down
+ * and set up again around content loading, and a second open of the same
+ * port fails. Returns the handle, or a negative value without a keyboard. */
+static int32_t ps4_keyboard_open(int32_t user_id)
+{
+   static int32_t handle            = -1;
+   static bool tried                = false;
+   char path[256];
+   bool is_debug                    = false;
+   ps4_kb_init_t kb_init            = NULL;
+   ps4_kb_open_t kb_open            = NULL;
+   ps4_kb_set_privilege_t kb_priv   = NULL;
+   ps4_kb_get_handle_t kb_get       = NULL;
+   const char *sandbox              = sceKernelGetFsSandboxRandomWord();
+   int32_t module;
+
+   if (tried)
+      return handle;
+   tried = true;
+
+   snprintf(path, sizeof(path), "/%s/common/lib/libSceKeyboard.sprx",
+         sandbox ? sandbox : "system");
+   module = (int32_t)sceKernelLoadStartModule(path, 0, NULL, 0, NULL, NULL);
+   ps4_keyboard_logf("[Keyboard]: load libSceKeyboard -> 0x%08X\n", (uint32_t)module);
+   if (module < 0)
+      return -1;
+
+   kb_init           = (ps4_kb_init_t)ps4_keyboard_sym(module,
+         "sceDbgKeyboardInit", "sceKeyboardInit", &is_debug);
+   kb_open           = (ps4_kb_open_t)ps4_keyboard_sym(module,
+         "sceDbgKeyboardOpen", "sceKeyboardOpen", &is_debug);
+   ps4_kb_read_state = (ps4_kb_read_state_t)ps4_keyboard_sym(module,
+         "sceDbgKeyboardReadState", "sceKeyboardReadState", &is_debug);
+   ps4_kb_close      = (ps4_kb_close_t)ps4_keyboard_sym(module,
+         "sceDbgKeyboardClose", "sceKeyboardClose", &is_debug);
+   if (sceKernelDlsym(module, "sceKeyboardSetProcessPrivilege",
+            (void**)&kb_priv) != 0)
+      kb_priv = NULL;
+   if (sceKernelDlsym(module, "sceKeyboardGetHandle",
+            (void**)&kb_get) != 0)
+      kb_get = NULL;
+
+   ps4_keyboard_logf("[Keyboard]: %s API, init %d open %d read %d\n",
+         is_debug ? "debug" : "retail", kb_init != NULL, kb_open != NULL,
+         ps4_kb_read_state != NULL);
+   if (!kb_init || !kb_open || !ps4_kb_read_state)
+      return -1;
+
+   ps4_keyboard_logf("[Keyboard]: init -> 0x%08X\n", (uint32_t)kb_init());
+   if (kb_priv)
+      ps4_keyboard_logf("[Keyboard]: set privilege -> 0x%08X\n",
+            (uint32_t)kb_priv(1));
+   handle = kb_open(user_id, 0 /* standard port */, 0, NULL);
+   ps4_keyboard_logf("[Keyboard]: open user 0x%x -> 0x%08X\n", user_id,
+         (uint32_t)handle);
+   if (handle < 0 && kb_get)
+   {
+      handle = kb_get(user_id, 0, 0);
+      ps4_keyboard_logf("[Keyboard]: get handle -> 0x%08X\n", (uint32_t)handle);
+   }
+   return handle;
+}
+#endif
 
 static void* ps4_input_initialize(const char *joypad_driver)
 {
@@ -314,17 +456,17 @@ static void* ps4_input_initialize(const char *joypad_driver)
   ps4->mouse_y = 0;
 #endif
 #ifdef HAVE_KEYBOARD
+#if defined(HAVE_OOSDK)
+  ps4->keyboard_handle = ps4_keyboard_open(user_id);
+#else
   sceDbgKeyboardInit();
   ps4->keyboard_handle = sceDbgKeyboardOpen(user_id, SCE_DBG_KEYBOARD_PORT_TYPE_STANDARD, 0, NULL);
+#endif
   input_keymaps_init_keyboard_lut(rarch_key_map_ps4);
   unsigned int i;
   for (i = 0; i <= PS4_MAX_SCANCODE; i++)
   {
     ps4->keyboard_state[i] = false;
-  }
-  for (i = 0; i < KEYBOARD_MAX_HISTORY; i++)
-  {
-    ps4->prev_keys[i] = 0;
   }
 #endif
 #endif

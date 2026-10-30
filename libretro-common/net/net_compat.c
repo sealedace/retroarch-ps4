@@ -33,6 +33,14 @@
 #include <retro_timers.h>
 #include <compat/strl.h>
 
+#if defined(__ORBIS__) && defined(HAVE_OOSDK)
+/* OpenOrbis' <orbis/Net.h> declares sceNetInetNtop() without a prototype
+ * or return type, so declare the three libSceNet calls used here. */
+uint16_t sceNetHtons(uint16_t host16);
+int sceNetInetPton(int af, const char *src, void *dst);
+const char *sceNetInetNtop(int af, const void *src, char *dst, uint32_t size);
+#endif
+
 #if defined(_XBOX)
 /* TODO - implement h_length and h_addrtype */
 struct hostent

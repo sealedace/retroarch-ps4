@@ -60,6 +60,10 @@
 
 #include "verbosity.h"
 
+#if defined(ORBIS) && defined(HAVE_OOSDK)
+#include <orbis/libkernel.h>
+#endif
+
 #ifdef HAVE_QT
 #include "ui/ui_companion_driver.h"
 #endif
@@ -293,6 +297,19 @@ void RARCH_LOG_V(const char *tag, const char *fmt, va_list ap)
 #else
 #if defined(HAVE_LIBNX)
       mutexLock(&g_verbosity->mtx);
+#endif
+#if defined(ORBIS) && defined(HAVE_OOSDK)
+      {
+         /* Mirror to the kernel log, readable over GoldHEN's klog */
+         char line[1024];
+         va_list ap_copy;
+         va_copy(ap_copy, ap);
+         vsnprintf(line, sizeof(line), fmt, ap_copy);
+         va_end(ap_copy);
+         sceKernelDebugOutText(0, tag_v);
+         sceKernelDebugOutText(0, " ");
+         sceKernelDebugOutText(0, line);
+      }
 #endif
       if (fp)
       {

@@ -3,12 +3,24 @@ DEBUG               ?= 0
 GRIFFIN_BUILD        = 0
 WHOLE_ARCHIVE_LINK   = 0
 
+# Cores are whole RetroArch executables with one core linked in, switched
+# with sceSystemServiceLoadExec. CORE=<static libretro core archive> builds
+# such a core executable; without it the menu eboot gets the dummy core.
+CORE ?=
+ifeq ($(strip $(CORE)),)
+HAVE_STATIC_DUMMY ?= 1
+else
 HAVE_STATIC_DUMMY ?= 0
+endif
 HAVE_GLES3 ?= 1
 HAVE_MOUSE ?= 0
 HAVE_KEYBOARD ?= 0
 
 PS4_TITLE_ID	:= RETROARCH
+
+# Capabilities of the released osirizx eboot (system process: /data access,
+# VSH modules, composited by the shell), same as AUTH_INFO in Makefile.orbis
+AUTH_INFO := 000000000000000000000000001C004000FF000000000080000000000000000000000000000000000000008000400040000000000000008000000000000000080040FFFF000000F000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 PS4_TITLE_NAME	:= RetroArch
 
 PC_DEVELOPMENT_IP_ADDRESS  =
@@ -22,8 +34,10 @@ OBJ += memory/ps4/user_mem.o \
 			input/drivers/ps4_input.o \
 			input/drivers_joypad/ps4_joypad.o \
 			audio/drivers/psp_audio.o \
+			audio/drivers/ps4_audio.o \
 			gfx/drivers_context/orbis_ctx.o \
-			frontend/drivers/platform_orbis.o
+			frontend/drivers/platform_orbis.o \
+			frontend/drivers/platform_orbis_crt.o
 
 ifeq ($(HAVE_GLES3),1)
   DEFINES += -DHAVE_OPENGLES3
@@ -112,7 +126,7 @@ ifeq ($(UNAME_S),Linux)
   CDIR	:= linux
 endif
 ifeq ($(UNAME_S),Darwin)
-  PREFIX := /usr/local/opt/llvm/bin/
+  PREFIX := $(shell brew --prefix llvm)/bin/
   CDIR	:= macos
 endif
 
@@ -123,9 +137,9 @@ AR      := $(PREFIX)ar
 OBJCOPY := $(PREFIX)objcopy
 STRIP   := $(PREFIX)strip
 NM      := $(PREFIX)nm
-LD      := $(PREFIX)ld.lld
+LD      := $(shell command -v ld.lld)
 
-LIBDIRS += -L. -Lcores -Lmemory/ps4 -Lbuild
+LIBDIRS += -L. -Lcores -Lmemory/ps4 -Lbuild -L$(OO_PS4_TOOLCHAIN)/lib
 INCDIRS += -I. -Idefines -Imemory/ps4 -Ideps -Ideps/7zip -Ideps/libz -Ilibretro-common/include -Ideps/stb \
 					 -Ilibretro-common/include/compat/zlib -Ideps/rcheevos/include
 
@@ -136,7 +150,7 @@ DEFINES += -DHAVE_MAIN -DRARCH_INTERNAL -DRARCH_CONSOLE -DHAVE_FILTERS_BUILTIN \
 
 ifeq ($(HAVE_KEYBOARD), 1)
   DEFINES += -DHAVE_KEYBOARD
-  PS4_LIBS += -lSceDbgKeyboard
+  # input/drivers/ps4_input.c looks the keyboard functions up at run time
 endif
 
 ifeq ($(HAVE_MOUSE),1)
@@ -157,14 +171,22 @@ ifeq ($(WHOLE_ARCHIVE_LINK), 1)
   WHOLE_END := --no-whole-archive
 endif
 
-PS4_LIBS += -lkernel -lSceLibcInternal -lScePosix -lSceSysmodule -lSceSystemService \
+PS4_LIBS += -lc -lc++ -lc++abi -lkernel -lSceLibcInternal -lSceSysmodule -lSceSystemService \
 						-lSceUserService -lSceAudioOut -lScePad -lSceNet -lSceNetCtl -lScePigletv2VSH
 
-LIBS	:= $(WHOLE_START) -lretro_ps4 $(WHOLE_END) $(PS4_LIBS)
+ifeq ($(strip $(CORE)),)
+LIBS	:= $(PS4_LIBS)
+else
+LIBS	:= $(WHOLE_START) $(CORE) $(WHOLE_END) $(PS4_LIBS)
+endif
 
-CFLAGS   := -cc1 -triple x86_64-scei-ps4-elf -munwind-tables -std=c11 $(ARCHFLAGS) $(INCDIRS) $(DEFINES) -emit-obj
-CXXFLAGS := -cc1 -triple x86_64-scei-ps4-elf -munwind-tables -std=c++11 $(ARCHFLAGS) $(INCDIRS) $(DEFINES) -emit-obj
-LDFLAGS  := -m elf_x86_64 -pie --script $(OO_PS4_TOOLCHAIN)/link.x --eh-frame-hdr $(LIBDIRS) $(LIBS) $(OO_PS4_TOOLCHAIN)/lib/crt1.o
+TCFLAGS  := --target=x86_64-pc-freebsd12-elf -fPIC -funwind-tables -c -include defines/oosdk_fixups.h -isysroot $(OO_PS4_TOOLCHAIN) -isystem $(OO_PS4_TOOLCHAIN)/include -idirafter $(OO_PS4_TOOLCHAIN)/include/orbis -idirafter gfx/include/ANGLE
+CFLAGS   := $(TCFLAGS) -std=gnu11 $(ARCHFLAGS) $(INCDIRS) $(DEFINES)
+CXXFLAGS := $(TCFLAGS) -isystem $(OO_PS4_TOOLCHAIN)/include/c++/v1 -std=gnu++11 $(ARCHFLAGS) $(INCDIRS) $(DEFINES)
+# The toolchain's crt1.o with its entry disabled: its process parameters
+# are kept, the entry is frontend/drivers/platform_orbis_crt.c
+CRT1     := crt1_orbis.o
+LDFLAGS  := -m elf_x86_64 -pie --script $(OO_PS4_TOOLCHAIN)/link.x --eh-frame-hdr $(LIBDIRS) $(LIBS) $(CRT1)
 ARFLAGS  := rcs $(INCDIRS)
 
 ifeq ($(DEBUG), 1)
@@ -191,11 +213,15 @@ all: $(TARGETS)
 %.o: %.s
 	$(AS) -o $@ $<
 
-$(TARGET).elf: $(OBJ)
+$(CRT1): $(OO_PS4_TOOLCHAIN)/lib/crt1.o
+	$(PREFIX)llvm-objcopy --redefine-sym _start=_oo_start_unused \
+		--redefine-sym _start_ps4_c=_oo_start_ps4_c_unused $< $@
+
+$(TARGET).elf: $(OBJ) $(CRT1)
 	$(LD) $(OBJ) -o $(TARGET).elf $(LDFLAGS)
-	$(OO_PS4_TOOLCHAIN)/bin/$(CDIR)/create-eboot -in=$(TARGET).elf -out=$(TARGET).oelf --paid 0x3800000000000011
+	$(OO_PS4_TOOLCHAIN)/bin/$(CDIR)/create-fself -in=$(TARGET).elf -out=$(TARGET).oelf --eboot eboot.bin --paid 0x3100000000000002 --authinfo $(AUTH_INFO)
 
 clean:
-	rm -f $(OBJ) $(TARGET).elf $(TARGET).oelf
+	rm -f $(OBJ) $(CRT1) $(TARGET).elf $(TARGET).oelf
 
 .PHONY: clean all

@@ -1,281 +1,122 @@
-[![Build Status](https://travis-ci.org/libretro/RetroArch.svg?branch=master)](https://travis-ci.org/libretro/RetroArch)
-[![Coverity Scan Build Status](https://scan.coverity.com/projects/8936/badge.svg)](https://scan.coverity.com/projects/retroarch)
-
-# RetroArch
-
-RetroArch is the reference frontend for the libretro API.
-Popular examples of implementations for this API includes video game system emulators and game engines as well as
-more generalized 3D programs.
-These programs are instantiated as dynamic libraries. We refer to these as "libretro cores".
-
-![XMB menu driver](docs/XMB-main-menu.jpg "XMB menu driver")
-
-![rgui menu driver](docs/rgui-main-menu.jpg "rgui menu driver")
-
-![glui menu driver](docs/glui-main-menu.jpg "glui menu driver")
-
-![ozone menu driver](docs/ozone-main-menu.jpg "ozone menu driver")
-
-## libretro
-
-[libretro](https://www.libretro.com) is an API that exposes generic audio/video/input callbacks.
-A frontend for libretro (such as RetroArch) handles video output, audio output, input and application lifecycle.
-A libretro core written in portable C or C++ can run seamlessly on many platforms with very little to no porting effort.
-
-While RetroArch is the reference frontend for libretro, several other projects have used the libretro
-interface to include support for emulators and/or game engines. libretro is completely open and free for anyone to use.
-
-[libretro API header](https://github.com/libretro/RetroArch/blob/master/libretro-common/include/libretro.h)
-
-## Binaries
-
-Latest binaries are currently hosted on the [buildbot](http://buildbot.libretro.com/).
-
-## Support
-
-To reach developers, either make an issue here on GitHub, make a thread on the [forum](https://www.libretro.com/forums/), chat on [discord](https://discord.gg/C4amCeV), or visit our IRC channel: #retroarch @ irc.freenode.org. You could create a post in [Reddit](https://www.reddit.com/r/RetroArch/) with *Technical Support* flair.
-
-## Documentation
-
-See our [Documentation Center](https://docs.libretro.com/). On Unix, man-pages are provided.
-More developer-centric stuff is found [here](https://docs.libretro.com/development/libretro-overview/).
-
-## Related projects
-
-   - Cg/HLSL shaders: [common-shaders](https://github.com/libretro/common-shaders)
-   - slang shaders: [slang-shaders](https://github.com/libretro/slang-shaders)
-   - GLSL shaders: [glsl-shaders](https://github.com/libretro/glsl-shaders)
-   - Helper scripts to build libretro implementations: [libretro-super](https://github.com/libretro/libretro-super)
-   - GitHub mirrors of projects, useful for generating diff files: [libretro-mirrors](https://github.com/libretro-mirrors/)
-
-## Philosophy
-
-RetroArch attempts to be small and lean
-while still having all the useful core features expected from an emulator.
-It is designed to be very portable and features a gamepad-centric and touchscreen UI.
-It also has a full-featured command-line interface.
-
-In some areas, RetroArch goes beyond and emphasizes on not-so-common technical features such as multi-pass shader support,
-real-time rewind (Braid-style), video recording (using FFmpeg), run-ahead input latency removal, etc.
-
-RetroArch also emphasizes being easy to integrate into various launcher frontends.
-
-## Platforms
-
-RetroArch has been ported to the following platforms:
-
-   - DOS
-   - Windows
-   - Linux
-   - Emscripten (WebAssembly and JavaScript)
-   - FreeBSD
-   - NetBSD
-   - OpenBSD
-   - Haiku
-   - Solaris
-   - macOS (PPC, x86-32 and x86-64)
-   - PlayStation 2
-   - PlayStation 3
-   - PlayStation Portable
-   - PlayStation Vita
-   - Original Microsoft Xbox
-   - Microsoft Xbox 360 (Libxenon/XeXDK)
-   - Nintendo GameCube
-   - Nintendo Wii
-   - Nintendo Wii U
-   - Nintendo 3DS/2DS
-   - Nintendo Switch
-   - Nintendo NES/SNES Classic Edition
-   - Raspberry Pi
-   - Android
-   - iOS
-   - Blackberry
-
-## Dependencies (PC)
-
-There are no true hard dependencies per se.
-
-On Windows, RetroArch can run with only Win32 as dependency.
-
-On Linux, there are no true dependencies. For optimal usage, the
-following dependencies come as recommended:
-
-   - GL headers / Vulkan headers
-   - X11 headers and libs, or EGL/KMS/GBM
-
-OSX port of RetroArch requires latest versions of XCode to build.
-
-RetroArch can utilize these libraries if enabled:
-
-   - nvidia-cg-toolkit
-   - libfreetype2 (TTF font rendering on screen)
-
-RetroArch needs at least one of these audio driver libraries:
-
-   - ALSA
-   - OSS
-   - RoarAudio
-   - RSound
-   - OpenAL
-   - JACK
-   - SDL
-   - PulseAudio
-   - XAudio2 (Win32, Xbox 360)
-   - DirectSound (Win32, Xbox 1)
-   - CoreAudio (OSX, iOS)
-
-To run properly, RetroArch requires a libretro implementation present; however, as it's typically loaded
-dynamically, it's not required at build time.
-
-## Dependencies (Console ports, mobile)
-
-Console ports have their own dependencies, but generally do not require
-anything other than what the respective SDKs provide.
-
-## Configuring
-
-The default configuration is defined in `config.def.h`.
-It is not recommended to change this unless you know what you're doing.
-These can later be tweaked by using a config file.
-A sample configuration file is installed to `/etc/retroarch.cfg`. This is the system-wide config file.
-
-RetroArch will on startup create a config file in `$XDG\_CONFIG\_HOME/retroarch/retroarch.cfg` if it does not exist.
-Users only need to configure a certain option if the desired value deviates from the value defined in config.def.h.
-
-To configure joypads, use the built-in menu or the `retroarch-joyconfig` command-line tool.
-
-## Compiling and installing
-
-Instructions for compiling and installing RetroArch can be found in the [Libretro/RetroArch Documentation Center](https://docs.libretro.com/).
-
-## CRT 15Khz Resolution Switching
-
-CRT SwitchRes will turn on, on the fly. However, you will need to restart RetroArch to disable it. With CRT SwitchRes enable RetroArch will start in 2560 x 480 @ 60.
-
-If you are running Windows, before enabling the CRT SwitchRes options please make sure you have installed CRTEmudriver and installed some modelines. The minimum modelines for all games to switch correctly are:
-
-- 2560 x 192 @ 60.000000
-- 2560 x 200 @ 60.000000
-- 2560 x 240 @ 60.000000
-- 2560 x 224 @ 60.000000
-- 2560 x 237 @ 60.000000
-- 2560 x 256 @ 50.000000
-- 2560 x 254 @ 55.000000
-- 2560 x 448 @ 60.000000
-- 2560 x 480 @ 60.000000
-
-Install these modelines replacing 2560 with your desired super resolution. The above resolutions are NTSC only so if you would be playing any PAL content please add PAL modelines:
-
-- 2560 x 192 @ 50.000000
-- 2560 x 200 @ 50.000000
-- 2560 x 240 @ 50.000000
-- 2560 x 224 @ 50.000000
-- 2560 x 288 @ 50.000000
-- 2560 x 237 @ 50.000000
-- 2560 x 254 @ 55.000000
-- 2560 x 448 @ 50.000000
-- 2560 x 480 @ 50.000000
-
-Some games will require higher PAL resolutions which should also be installed:
-
-- 2560 x 512 @ 50.000000
-- 2560 x 576 @ 50.000000
-
-Ideally install all these modelines and everything will work great.
-
-## Super Resolutions
-
-The default super resolution is 2560. It is displayed just under the CRT switch option, which can be found in video settings. This can be changed within the retroarch.cfg. The only compatible resolutions are 1920, 2560 and 3840. Any other resolutions will be ignored and native switching will be activated.
-
-## Native Resolutions
-
-If native resolutions are activated you will need a whole new set of modelines:
-
-- 256 x 240 @ 50.006977 SNESpal
-- 256 x 448 @ 50.006977 SNESpal
-- 512 x 224 @ 50.006977 SNESpal
-- 512 x 240 @ 50.006977 SNESpal
-- 512 x 448 @ 50.006977 SNESpal
-- 256 x 240 @ 60.098812 SNESntsc
-- 256 x 448 @ 60.098812 SNESntsc
-- 512 x 240 @ 60.098812 SNESntsc
-- 512 x 224 @ 60.098812 SNESntsc
-- 512 x 448 @ 60.098812 SNESntsc
-- 256 x 192 @ 59.922745 MDntsc
-- 256 x 224 @ 59.922745 MDntsc
-- 320 x 224 @ 59.922745 MDntsc
-- 320 x 240 @ 59.922745 MDntsc
-- 320 x 448 @ 59.922745 MDntsc
-- 320 x 480 @ 59.922745 MDntsc
-- 256 x 192 @ 49.701458 MDpal
-- 256 x 224 @ 49.701458 MDpal
-- 320 x 224 @ 49.701458 MDpal
-- 320 x 240 @ 49.701458 MDpal
-- 320 x 288 @ 49.701458 MDpal
-- 320 x 448 @ 49.701458 MDpal
-- 320 x 480 @ 49.701458 MDpal
-- 320 x 576 @ 49.701458 MDpal
-- 256 x 288 @ 49.701458 MSYSpal
-- 256 x 240 @ 60.098812 NESntsc
-- 256 x 240 @ 50.006977 NESpal
-
-- 640 x 237 @ 60.130001 N64ntsc
-- 640 x 240 @ 60.130001 N64ntsc
-- 640 x 480 @ 60.130001 N64ntsc
-- 640 x 288 @ 50.000000 N64pal
-- 640 x 480 @ 50.000000 N64pal
-- 640 x 576 @ 50.000000 N64pal
-
-- 256 x 252 @ 49.759998 PSXpal
-- 320 x 252 @ 49.759998 PSXpal
-- 384 x 252 @ 49.759998 PSXpal
-- 640 x 252 @ 49.759998 PSXpal
-- 640 x 540 @ 49.759998 PSXpal
-
-- 384 x 240 @ 59.941002 PSXntsc
-- 256 x 480 @ 59.941002 PSXntsc
-
-- 352 x 240 @ 59.820000 Saturn/SGFX_NTSCp
-- 704 x 240 @ 59.820000 SaturnNTSCp
-- 352 x 480 @ 59.820000 SaturnNTSCi
-- 704 x 480 @ 59.820000 SaturnNTSCi
-- 352 x 288 @ 49.701458 SaturnPALp
-- 704 x 288 @ 49.701458 SaturnPALp
-- 352 x 576 @ 49.701458 SaturnPALi
-- 704 x 576 @ 49.701458 SaturnPALi
-
-- 240 x 160 @ 59.730000 GBA
-- 320 x 200 @ 60.000000 Doom
-
-// Arcade
-
-- 400 x 254 @ 54.706841 MK
-- 384 x 224 @ 59.637405 CPS1
-
-These modelines are more accurate giving exact hz. However, some games may have unwanted results. This is due to mid-scanline resolution changes on the original hardware. For the best results super resolutions are the way to go.
-
-## CRT resolution switching & MAME
-
-Some arcade resolutions can be very different from consumer CRTs. There is resolution detection to ensure MAME games will be displayed in the closest available resolution but drawn at their native resolution within this resolution. Meaning that the MAME game will look just like the original hardware.
-
-MAME ROMs that run in a vertical aspect like DoDonPachi need to be rotated within MAME before resolution switching and aspect correction will work. Do this before enabling CRT SwitchRes so that RetroArch will run in your desktop resolution. Once you have rotated any games that may need it turn CRT SwitchRes on.
-
-## Socials
-
-The links below belong to our official channels. Links other than this may have been created by fans, independent members or followers. We seriously recommend using our original resources.
-
-- [Website](https://www.retroarch.com/)
-- [Blog](https://libretro.com/)
-- [Facebook](https://www.facebook.com/libretro)
-- [Twitter](https://twitter.com/libretro)
-- [Reddit](https://www.reddit.com/r/RetroArch/)
-- [YouTube](https://www.youtube.com/Libretro)
-- [Google Post](https://posts.google.com/share/55Nhs2jG)
-- [Steam](https://store.steampowered.com/app/1118310/RetroArch/)
-- [YouTube Topic](https://www.youtube.com/channel/UC5q007PYyQPgin0HHbzF0zQ)
-- [Patreon](https://www.patreon.com/libretro)
-- [BOUNTYSOURCE](https://www.bountysource.com/teams/libretro/issues)
-- [Discord](https://discord.gg/27Xxm2h)
-- [Teespring](https://teespring.com/stores/retroarch)
-- [Documentation](https://docs.libretro.com/)
-- [Forum](https://forums.libretro.com/)
+# RetroArch for PS4 — audio fix, keyboard & CJK fonts
+
+[English](#english) · [中文](#中文)
+
+A fork of [osirizx/retroarch](https://github.com/osirizx/retroarch) (the PS4
+port of [libretro/RetroArch](https://github.com/libretro/RetroArch) 1.8.8),
+rebuilt with the [OpenOrbis](https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain)
+toolchain and three additions, developed and tested on a PS4 Pro (firmware
+12.02, GoldHEN). The original port's upstream README is kept as
+[`README.upstream.md`](README.upstream.md).
+
+This is GPLv3 software, like the code it builds on. See [`COPYING`](COPYING).
+
+---
+
+## English
+
+### What's changed
+
+- **New audio driver** (`audio/drivers/ps4_audio.c`, registered as `ps4`).
+  The stock port paced audio through a blocking driver that ran near buffer
+  underrun, so a game like KOF '98 crackled and lagged. The new driver uses a
+  ring buffer sized from `audio_latency`, a dedicated worker thread, and
+  dynamic-rate control, and runs with no underruns on the test content.
+- **USB keyboard support** (`input/drivers/ps4_input.c`, build with
+  `HAVE_KEYBOARD=1`). The retail `libSceKeyboard` exports only `sceKeyboard*`,
+  so the functions are resolved at run time; the handle is opened once per
+  process, held keys are tracked as a set so simultaneous presses (fighting-game
+  motions) work, and keyboard binds are honoured in `ps4_input_state`.
+- **CJK font fallback** (`gfx/drivers_font_renderer/stb_unicode.c`). The menu
+  fonts cover only Latin; glyphs they lack are drawn from the system's
+  `chinese-fallback-font.ttf`, so Chinese (and other CJK) playlist/game names
+  render instead of showing as boxes.
+
+Plus the OpenOrbis v0.5.x bring-up work the above depends on: a replacement
+process entry point (`frontend/drivers/platform_orbis_crt.c`), a
+`CLOCK_MONOTONIC` fixup for the FreeBSD kernel (`defines/oosdk_fixups.h`),
+Piglet/`eglSwapInterval` handling, and `Makefile.ps4`.
+
+### Building
+
+Requires the [OpenOrbis PS4 Toolchain](https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain)
+(tested with v0.5.2). Set `OO_PS4_TOOLCHAIN`, then:
+
+```sh
+# menu / frontend eboot
+make -f Makefile.ps4 -j
+
+# with keyboard support, linking a static libretro core archive
+make -f Makefile.ps4 -j HAVE_KEYBOARD=1 CORE=/path/to/<core>_libretro.a
+```
+
+Each `*_libretro_ps4.self` core is a whole RetroArch+core `fself` launched via
+`sceSystemServiceLoadExec`. The build embeds the standard PS4 system-privilege
+`AUTH_INFO` (a widely published homebrew value, in `Makefile.ps4`) and PAID
+`0x3100000000000002`; link `libc.prx` and `libSceFios2.prx`, and do not link
+`ScePosix`. Packaging as a title (so cores can reach `app0/libc.prx`) is left to
+your own `.pkg` flow.
+
+Build artifacts (`eboot.bin`, `*.oelf`, `*.elf`) are git-ignored.
+
+### Credits
+
+[libretro/RetroArch](https://github.com/libretro/RetroArch) · the PS4 port by
+[osirizx](https://github.com/osirizx) · the
+[OpenOrbis](https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain) toolchain.
+
+---
+
+## 中文
+
+基于 [osirizx/retroarch](https://github.com/osirizx/retroarch)（[libretro/RetroArch](https://github.com/libretro/RetroArch)
+1.8.8 的 PS4 移植版）的分支，用
+[OpenOrbis](https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain) 工具链重新编译，
+加入三项改动，在 PS4 Pro（系统 12.02，GoldHEN）上开发并测试。原移植版的说明文档
+保留为 [`README.upstream.md`](README.upstream.md)。本项目与所基于的代码一样采用
+GPLv3，见 [`COPYING`](COPYING)。
+
+### 改了什么
+
+- **新的音频驱动**（`audio/drivers/ps4_audio.c`，注册名为 `ps4`）。原版移植用的
+  阻塞式驱动长期贴着缓冲区下溢运行，像 KOF98 这类游戏会爆音、声音滞后。新驱动按
+  `audio_latency` 计算环形缓冲区大小，用独立工作线程加动态采样率控制，测试内容下
+  无下溢、无爆音、不滞后。
+- **USB 键盘支持**（`input/drivers/ps4_input.c`，用 `HAVE_KEYBOARD=1` 编译）。
+  零售版 `libSceKeyboard` 只导出 `sceKeyboard*`，函数在运行时解析；句柄每进程只
+  打开一次，按下的键用集合跟踪，所以同时按多个键（格斗游戏搓招）也能正常识别，
+  并在 `ps4_input_state` 中处理键盘绑定。
+- **中日韩字体回退**（`gfx/drivers_font_renderer/stb_unicode.c`）。菜单自带字体
+  只覆盖拉丁字符，缺的字改用系统的 `chinese-fallback-font.ttf` 绘制，于是列表和
+  游戏名里的中文（及其他 CJK 文字）能正常显示，不再是方块。
+
+以及上述功能依赖的 OpenOrbis v0.5.x 适配工作：替换的进程入口
+（`frontend/drivers/platform_orbis_crt.c`）、针对 FreeBSD 内核的
+`CLOCK_MONOTONIC` 修正（`defines/oosdk_fixups.h`）、Piglet/`eglSwapInterval`
+处理，以及 `Makefile.ps4`。
+
+### 编译
+
+需要 [OpenOrbis PS4 工具链](https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain)
+（在 v0.5.2 上测试）。设好 `OO_PS4_TOOLCHAIN` 后：
+
+```sh
+# 菜单 / 前端 eboot
+make -f Makefile.ps4 -j
+
+# 带键盘支持，链接一个静态 libretro 核心库
+make -f Makefile.ps4 -j HAVE_KEYBOARD=1 CORE=/path/to/<core>_libretro.a
+```
+
+每个 `*_libretro_ps4.self` 核心都是一个完整的 RetroArch+核心 `fself`，由
+`sceSystemServiceLoadExec` 启动。编译时会嵌入标准的 PS4 系统权限 `AUTH_INFO`
+（homebrew 圈内广泛公开的值，在 `Makefile.ps4` 里）和 PAID `0x3100000000000002`；
+需链接 `libc.prx` 和 `libSceFios2.prx`，不要链接 `ScePosix`。打包成应用（让核心能
+访问 `app0/libc.prx`）请用你自己的 `.pkg` 流程。编译产物（`eboot.bin`、`*.oelf`、
+`*.elf`）已在 git 中忽略。
+
+### 致谢
+
+[libretro/RetroArch](https://github.com/libretro/RetroArch) · PS4 移植作者
+[osirizx](https://github.com/osirizx) ·
+[OpenOrbis](https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain) 工具链。

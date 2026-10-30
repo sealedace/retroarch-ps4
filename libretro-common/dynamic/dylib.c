@@ -27,6 +27,7 @@
 
 #if defined(ORBIS)
 #include <orbis/libkernel.h>
+#include <defines/ps4_defines.h>
 #endif
 
 #ifdef NEED_DYNAMIC
@@ -139,6 +140,8 @@ char *dylib_error(void)
 #ifdef _WIN32
    if (last_dyn_error[0])
       return last_dyn_error;
+   return NULL;
+#elif defined(ORBIS)
    return NULL;
 #else
    return (char*)dlerror();

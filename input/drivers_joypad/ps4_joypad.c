@@ -25,7 +25,7 @@
 #include "../../verbosity.h"
 
 #if defined(HAVE_OOSDK)
-//#include <orbis/UserService.h>
+#include <orbis/UserService.h>
 #elif defined(HAVE_LIBORBIS)
 #include <userservice.h>
 #else
@@ -268,6 +268,24 @@ static bool ps4_joypad_query_pad(unsigned pad)
 static bool ps4_joypad_rumble(unsigned pad,
       enum retro_rumble_effect effect, uint16_t strength)
 {
+#if defined(HAVE_OOSDK)
+   static OrbisPadVibeParam params[PS4_MAX_ORBISPADS];
+
+   if (pad >= PS4_MAX_ORBISPADS)
+      return false;
+
+   switch (effect)
+   {
+      case RETRO_RUMBLE_WEAK:
+         params[pad].smMotor = LERP(strength, 0xffff, 0xff);
+         break;
+      case RETRO_RUMBLE_STRONG:
+         params[pad].lgMotor = LERP(strength, 0xffff, 0xff);
+         break;
+   }
+
+   scePadSetVibration(ds_joypad_states[pad].handle[0], &params[pad]);
+#else
    ScePadVibrationParam params;
 
    switch (effect)
@@ -281,6 +299,7 @@ static bool ps4_joypad_rumble(unsigned pad,
    }
 
    scePadSetVibration(ds_joypad_states[pad].handle[0], &params);
+#endif
 
    return true;
 }

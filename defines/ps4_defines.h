@@ -26,6 +26,10 @@
 #define SceUID uint32_t
 #define SceKernelModule OrbisKernelModule
 #define SceKernelStat OrbisKernelStat
+#define SceUserServiceUserId OrbisUserServiceUserId
+#define SceUserServiceLoginUserIdList OrbisUserServiceLoginUserIdList
+#define SceUserServiceInitializeParams OrbisUserServiceInitializeParams
+#define ScePadData OrbisPadData
 #define SCE_KERNEL_PRIO_FIFO_DEFAULT 700
 #define SCE_AUDIO_OUT_PORT_TYPE_MAIN   0
 #define SCE_AUDIO_OUT_MODE_STEREO      1
@@ -36,7 +40,8 @@
 #define SCE_MOUSE_OPEN_PARAM_MERGED	0x01
 #define SCE_MOUSE_PORT_TYPE_STANDARD 0
 #define SCE_DBG_KEYBOARD_PORT_TYPE_STANDARD	0
-#define SCE_USER_SERVICE_MAX_LOGIN_USERS 16
+/* The login user list holds 4 users (OrbisUserServiceLoginUserIdList) */
+#define SCE_USER_SERVICE_MAX_LOGIN_USERS ORBIS_USER_SERVICE_MAX_LOGIN_USERS
 #define SCE_USER_SERVICE_USER_ID_INVALID 0xFFFFFFFF
 #define SCE_ORBISPAD_ERROR_ALREADY_OPENED 0x80920004
 #define SCE_PAD_PORT_TYPE_STANDARD 0
@@ -45,5 +50,6 @@
 #define SCE_KERNEL_PROT_CPU_RW 0x02
 #define SCE_KERNEL_MAP_FIXED 0x10
 #endif
+
 
 #endif

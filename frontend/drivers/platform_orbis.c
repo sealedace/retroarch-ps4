@@ -23,6 +23,7 @@
 #endif
 
 #include <stdio.h>
+#include <stdarg.h>
 #include <stdlib.h>
 
 #if defined(HAVE_OOSDK)
@@ -111,15 +112,53 @@ typedef struct OrbisGlobalConf
 OrbisGlobalConf *myConf;
 #endif
 
-#if defined(HAVE_OOSDK)
-FILE _Stdin, _Stderr, _Stdout;
-#endif
 char eboot_path[512];
 char user_path[512];
 SceKernelModule s_piglet_module;
 SceKernelModule s_shacc_module;
 
 static enum frontend_fork orbis_fork_mode = FRONTEND_FORK_NONE;
+
+/* Start-up diagnostics, before the logger exists: to the kernel log
+ * (GoldHEN klog, port 3232), which needs neither the filesystem nor
+ * stdout. */
+static void orbis_boot_logf(const char *fmt, ...)
+{
+   char line[512];
+   va_list ap;
+
+   va_start(ap, fmt);
+   vsnprintf(line, sizeof(line), fmt, ap);
+   va_end(ap);
+
+   sceKernelDebugOutText(0, "[RA boot] ");
+   sceKernelDebugOutText(0, line);
+}
+
+/* sceKernelLoadStartModule returns a handle or a negative error code
+ * in an unsigned type, so compare it as signed. */
+static SceKernelModule orbis_load_module(const char *name,
+      const char *const *dirs, size_t num_dirs)
+{
+   size_t i;
+   int32_t handle = -1;
+
+   for (i = 0; i < num_dirs; i++)
+   {
+      char path[PATH_MAX_LENGTH];
+      int start_res = 0;
+
+      snprintf(path, sizeof(path), "%s%s", dirs[i], name);
+      handle = (int32_t)sceKernelLoadStartModule(path, 0, NULL, 0, NULL,
+            &start_res);
+      orbis_boot_logf("load %s -> 0x%08X (start %d)\n", path,
+            (uint32_t)handle, start_res);
+      if (handle >= 0)
+         break;
+   }
+
+   return (SceKernelModule)handle;
+}
 
 #ifdef __cplusplus
 extern "C"
@@ -145,11 +184,6 @@ int main(int argc, char *argv[])
 #endif
    };
 
-#if defined(HAVE_OOSDK)
-   _Stdin = *fdopen(STDIN_FILENO, "r");
-   _Stderr = *fdopen(STDERR_FILENO, "w");
-   _Stdout = *fdopen(STDOUT_FILENO, "w");
-#endif
    char file_path[PATH_MAX_LENGTH];
    char module_path[PATH_MAX_LENGTH];
    int len = sizeof(modules) / sizeof(modules[0]);
@@ -159,27 +193,35 @@ int main(int argc, char *argv[])
    else
       snprintf(module_path, sizeof(module_path), "/%s/common/lib", "system");
 
+   orbis_boot_logf("argc %d, sandbox %s\n", argc,
+         sandbox_word ? sandbox_word : "(none)");
+   for (int i = 0; i < argc; i++)
+      orbis_boot_logf("  argv[%d] = %s\n", i, argv[i] ? argv[i] : "(null)");
+
    for (int i = 0; i < len; i++)
    {
        snprintf(file_path, sizeof(file_path), "%s/%s.sprx", module_path, modules[i]);
-       sceKernelLoadStartModule(file_path, 0, NULL, 0, NULL, &ret);
+       ret = (int)sceKernelLoadStartModule(file_path, 0, NULL, 0, NULL, NULL);
+       orbis_boot_logf("load %s -> 0x%08X\n", file_path, (uint32_t)ret);
    }
 
-   // Try 2 paths for libScePigletv2VSH and libSceShaccVSH
-   s_piglet_module = sceKernelLoadStartModule(MODULE_PATH "libScePigletv2VSH.sprx", 0, NULL, 0, NULL, &ret);
-   if(s_piglet_module < 0)
    {
-      s_piglet_module = sceKernelLoadStartModule(MODULE_PATH_EXT "libScePigletv2VSH.sprx", 0, NULL, 0, NULL, &ret);
-      if (s_piglet_module < 0)
-        return -1;
+      char system_dir[PATH_MAX_LENGTH];
+      const char *dirs[3];
+
+      snprintf(system_dir, sizeof(system_dir), "%s/", module_path);
+      dirs[0] = MODULE_PATH;
+      dirs[1] = MODULE_PATH_EXT;
+      dirs[2] = system_dir;
+
+      s_piglet_module = orbis_load_module("libScePigletv2VSH.sprx", dirs, 3);
+      s_shacc_module  = orbis_load_module("libSceShaccVSH.sprx", dirs, 3);
    }
 
-   s_shacc_module = sceKernelLoadStartModule(MODULE_PATH "libSceShaccVSH.sprx", 0, NULL, 0, NULL, &ret);
-   if(s_shacc_module < 0)
+   if ((int32_t)s_piglet_module < 0 || (int32_t)s_shacc_module < 0)
    {
-      s_shacc_module = sceKernelLoadStartModule(MODULE_PATH_EXT "libSceShaccVSH.sprx", 0, NULL, 0, NULL, &ret);
-      if (s_shacc_module < 0)
-        return -1;
+      orbis_boot_logf("piglet/shacc not loaded, exiting\n");
+      return -1;
    }
 
    sceSystemServiceHideSplashScreen();
@@ -194,9 +236,6 @@ int main(int argc, char *argv[])
 		ps4LinkFinish();
 		return -1;
 	}
-#elif defined(HAVE_OOSDK)
-   argv = &(argv[1]);
-   argc = argc - 1;
 #endif
 
 #if defined(IS_SALAMANDER)
@@ -208,6 +247,7 @@ int main(int argc, char *argv[])
    {
       status = runloop_iterate();
       task_queue_check();
+
       if (status == -1)
       {
          break;
@@ -329,7 +369,26 @@ static void frontend_orbis_get_environment_settings(int *argc, char *argv[],
    params          = (struct rarch_main_wrap*)params_data;
    params->verbose = true;
 
-   if (!string_is_empty(argv[CONTENT_PATH_ARG_INDEX]))
+   /* The frontend that launched this core passes the content among its
+    * arguments; take the first argument that names an existing file
+    * other than an executable. */
+   const char *content_arg = NULL;
+   if (argc && argv)
+   {
+      for (i = 0; i < (unsigned)*argc; i++)
+      {
+         const char *arg = argv[i];
+         RARCH_LOG("argv[%u]: %s\n", i, arg ? arg : "(null)");
+         if (!content_arg && !string_is_empty(arg)
+               && !string_is_equal(arg, eboot_path)
+               && !string_ends_with(arg, ".self")
+               && !string_ends_with(arg, ".bin")
+               && path_is_valid(arg))
+            content_arg = arg;
+      }
+   }
+
+   if (content_arg)
    {
       static char path[PATH_MAX_LENGTH] = {0};
       struct rarch_main_wrap      *args =
@@ -337,7 +396,7 @@ static void frontend_orbis_get_environment_settings(int *argc, char *argv[],
 
       if (args)
       {
-         strlcpy(path, argv[CONTENT_PATH_ARG_INDEX], sizeof(path));
+         strlcpy(path, content_arg, sizeof(path));
 
          args->touched        = true;
          args->no_content     = false;
@@ -348,11 +407,7 @@ static void frontend_orbis_get_environment_settings(int *argc, char *argv[],
          args->content_path   = path;
          args->libretro_path  = NULL;
 
-         RARCH_LOG("argv[0]: %s\n", argv[0]);
-         RARCH_LOG("argv[1]: %s\n", argv[1]);
-         RARCH_LOG("argv[2]: %s\n", argv[2]);
-
-         RARCH_LOG("Auto-start game %s.\n", argv[CONTENT_PATH_ARG_INDEX]);
+         RARCH_LOG("Auto-start game %s.\n", path);
       }
    }
 #endif

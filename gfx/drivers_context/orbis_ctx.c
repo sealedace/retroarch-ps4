@@ -18,6 +18,9 @@
 #include <string/stdstring.h>
 #include <compat/strl.h>
 #include <piglet.h>
+#if defined(HAVE_OOSDK)
+#include <orbis/libkernel.h>
+#endif
 
 #ifdef HAVE_CONFIG_H
 #include "../../config.h"
@@ -191,6 +194,7 @@ static bool orbis_ctx_set_video_mode(void *data,
 #ifdef HAVE_EGL
     if (!egl_create_surface(&ctx_orbis->egl, &ctx_orbis->native_window))
         goto error;
+
 #endif
 
     return true;
@@ -251,6 +255,9 @@ static void orbis_ctx_set_swap_interval(void *data,
     orbis_ctx_data_t *ctx_orbis = (orbis_ctx_data_t *)data;
 
 #ifdef HAVE_EGL
+    /* Piglet's eglSwapBuffers blocks indefinitely with an interval of 1,
+     * so the interval stays 0 whatever is requested. */
+    (void)swap_interval;
     egl_set_swap_interval(&ctx_orbis->egl, 0);
 #endif
 }

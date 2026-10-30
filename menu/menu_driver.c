@@ -2851,12 +2851,21 @@ static bool menu_driver_init_internal(bool video_is_threaded)
    {
       menu_driver_data               = (menu_handle_t*)
          menu_driver_ctx->init(&menu_userdata, video_is_threaded);
+      if (!menu_driver_data)
+      {
+         RARCH_ERR("[Menu]: %s init failed\n", menu_driver_ctx->ident);
+         return false;
+      }
       menu_driver_data->userdata     = menu_userdata;
       menu_driver_data->driver_ctx   = menu_driver_ctx;
    }
 
    if (!menu_driver_data || !menu_init(menu_driver_data))
+   {
+      RARCH_ERR("[Menu]: menu_init failed (driver %s)\n",
+            menu_driver_ctx ? menu_driver_ctx->ident : "none");
       return false;
+   }
 
    {
       /* TODO/FIXME - can we get rid of this? Is this needed? */
